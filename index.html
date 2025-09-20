@@ -1,0 +1,671 @@
+"use client";
+
+import { useState, useRef, ChangeEvent } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Upload, FileText, CheckCircle, AlertCircle, Star, TrendingUp } from "lucide-react";
+
+interface FeedbackItem {
+  id: number;
+  category: string;
+  title: string;
+  description: string;
+  status: "good" | "improvement" | "missing";
+  priority: "high" | "medium" | "low";
+}
+
+interface ResumeData {
+  name: string;
+  email: string;
+  phone: string;
+  education: string[];
+  experience: string[];
+  skills: string[];
+}
+
+export default function AIResumeScanner() {
+  const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [resumeData, setResumeData] = useState<ResumeData | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackItem[]>([]);
+  const [overallScore, setOverallScore] = useState(0);
+  const [resumeText, setResumeText] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const selectedFile = e.target.files[0];
+      setFile(selectedFile);
+      processResume(selectedFile);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const selectedFile = e.dataTransfer.files[0];
+      setFile(selectedFile);
+      processResume(selectedFile);
+    }
+  };
+
+  const triggerFileInput = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const analyzeResumeContent = (content: string) => {
+    // Extract basic information
+    const nameMatch = content.match(/(?:name|full name)[:\s]*([^\n\r]+)/i);
+    const emailMatch = content.match(/(?:email)[:\s]*([^\s\n\r@]+@[^\s\n\r@]+\.[^\s\n\r]+)/i);
+    const phoneMatch = content.match(/(?:phone|tel|telephone)[:\s]*([^\n\r]+)/i);
+    
+    // Extract education
+    const educationMatches = content.match(/(?:education|university|college)[\s\S]*?(?=\n\n|\n[A-Z]|\z)/gi);
+    const education = educationMatches ? educationMatches.map(e => e.trim()) : [];
+    
+    // Extract experience
+    const experienceMatches = content.match(/(?:experience|work)[\s\S]*?(?=\n\n|\n[A-Z]|\z)/gi);
+    const experience = experienceMatches ? experienceMatches.map(e => e.trim()) : [];
+    
+    // Extract skills
+    const skillsMatches = content.match(/(?:skills|technologies|tools)[\s\S]*?(?=\n\n|\n[A-Z]|\z)/gi);
+    const skills = skillsMatches ? skillsMatches.map(s => s.trim()) : [];
+    
+    return {
+      name: nameMatch ? nameMatch[1].trim() : "Candidate",
+      email: emailMatch ? emailMatch[1].trim() : "Not provided",
+      phone: phoneMatch ? phoneMatch[1].trim() : "Not provided",
+      education: education.length > 0 ? education : ["Education section not found"],
+      experience: experience.length > 0 ? experience : ["Experience section not found"],
+      skills: skills.length > 0 ? skills : ["Skills section not found"]
+    };
+  };
+
+  const generateFeedback = (resumeData: ResumeData, content: string) => {
+    const feedbackItems: FeedbackItem[] = [];
+    let score = 0;
+    const maxScore = 100;
+    
+    // Contact Information Check
+    if (resumeData.email !== "Not provided" && resumeData.phone !== "Not provided") {
+      feedbackItems.push({
+        id: 1,
+        category: "Contact Information",
+        title: "Complete Contact Details",
+        description: "Your contact information is well-presented with email and phone number.",
+        status: "good",
+        priority: "high"
+      });
+      score += 15;
+    } else {
+      feedbackItems.push({
+        id: 1,
+        category: "Contact Information",
+        title: "Missing Contact Details",
+        description: "Add your email and phone number so employers can reach you.",
+        status: "missing",
+        priority: "high"
+      });
+    }
+    
+    // Education Check
+    if (resumeData.education.length > 0 && resumeData.education[0] !== "Education section not found") {
+      feedbackItems.push({
+        id: 2,
+        category: "Education",
+        title: "Educational Background Present",
+        description: "Your educational background is clearly outlined.",
+        status: "good",
+        priority: "medium"
+      });
+      score += 10;
+    } else {
+      feedbackItems.push({
+        id: 2,
+        category: "Education",
+        title: "Missing Education Section",
+        description: "Include your educational background to show your qualifications.",
+        status: "missing",
+        priority: "medium"
+      });
+    }
+    
+    // Experience Check
+    if (resumeData.experience.length > 0 && resumeData.experience[0] !== "Experience section not found") {
+      feedbackItems.push({
+        id: 3,
+        category: "Experience",
+        title: "Work Experience Included",
+        description: "Your professional experience is documented.",
+        status: "good",
+        priority: "high"
+      });
+      score += 20;
+      
+      // Check for quantifiable achievements
+      const hasMetrics = content.match(/\d+%|\d+ projects?|\$\d+|\d+ years?/gi);
+      if (hasMetrics) {
+        feedbackItems.push({
+          id: 4,
+          category: "Experience",
+          title: "Quantified Achievements",
+          description: "Great job including metrics to demonstrate impact!",
+          status: "good",
+          priority: "medium"
+        });
+        score += 10;
+      } else {
+        feedbackItems.push({
+          id: 4,
+          category: "Experience",
+          title: "Add Quantifiable Results",
+          description: "Include numbers, percentages, or specific outcomes to show your impact.",
+          status: "improvement",
+          priority: "medium"
+        });
+      }
+    } else {
+      feedbackItems.push({
+        id: 3,
+        category: "Experience",
+        title: "Missing Work Experience",
+        description: "Add your professional experience to show your career progression.",
+        status: "missing",
+        priority: "high"
+      });
+    }
+    
+    // Skills Check
+    if (resumeData.skills.length > 0 && resumeData.skills[0] !== "Skills section not found") {
+      feedbackItems.push({
+        id: 5,
+        category: "Skills",
+        title: "Skills Section Present",
+        description: "Your technical skills are clearly listed.",
+        status: "good",
+        priority: "high"
+      });
+      score += 15;
+      
+      // Check for modern skills
+      const modernSkills = ["react", "node", "python", "aws", "cloud", "docker", "kubernetes", "machine learning"];
+      const hasModernSkills = modernSkills.some(skill => 
+        content.toLowerCase().includes(skill)
+      );
+      
+      if (hasModernSkills) {
+        feedbackItems.push({
+          id: 6,
+          category: "Skills",
+          title: "Relevant Modern Skills",
+          description: "Your resume includes in-demand technical skills.",
+          status: "good",
+          priority: "medium"
+        });
+        score += 10;
+      } else {
+        feedbackItems.push({
+          id: 6,
+          category: "Skills",
+          title: "Add In-Demand Skills",
+          description: "Consider adding modern technologies like React, AWS, or Docker.",
+          status: "improvement",
+          priority: "medium"
+        });
+      }
+    } else {
+      feedbackItems.push({
+        id: 5,
+        category: "Skills",
+        title: "Missing Skills Section",
+        description: "List your technical skills to show your capabilities.",
+        status: "missing",
+        priority: "high"
+      });
+    }
+    
+    // Projects Check
+    const hasProjects = content.toLowerCase().includes("project");
+    if (hasProjects) {
+      feedbackItems.push({
+        id: 7,
+        category: "Projects",
+        title: "Projects Included",
+        description: "Including projects demonstrates practical application of your skills.",
+        status: "good",
+        priority: "medium"
+      });
+      score += 10;
+    } else {
+      feedbackItems.push({
+        id: 7,
+        category: "Projects",
+        title: "Add Personal Projects",
+        description: "Include 2-3 personal or academic projects to showcase your work.",
+        status: "missing",
+        priority: "medium"
+      });
+    }
+    
+    // Certifications Check
+    const hasCertifications = content.toLowerCase().includes("certification") || 
+                             content.toLowerCase().includes("certificate");
+    if (hasCertifications) {
+      feedbackItems.push({
+        id: 8,
+        category: "Certifications",
+        title: "Certifications Listed",
+        description: "Certifications show your commitment to professional development.",
+        status: "good",
+        priority: "low"
+      });
+      score += 5;
+    } else {
+      feedbackItems.push({
+        id: 8,
+        category: "Certifications",
+        title: "Consider Adding Certifications",
+        description: "Relevant certifications can strengthen your profile (AWS, Google Cloud, etc.).",
+        status: "improvement",
+        priority: "low"
+      });
+    }
+    
+    // Length Check
+    if (content.length > 300) {
+      feedbackItems.push({
+        id: 9,
+        category: "Format",
+        title: "Appropriate Length",
+        description: "Your resume has sufficient content for a comprehensive overview.",
+        status: "good",
+        priority: "low"
+      });
+      score += 5;
+    } else {
+      feedbackItems.push({
+        id: 9,
+        category: "Format",
+        title: "Resume Too Short",
+        description: "Expand your resume with more details about your experience and skills.",
+        status: "improvement",
+        priority: "low"
+      });
+    }
+    
+    return { feedbackItems, score };
+  };
+
+  const processResume = (file: File) => {
+    setIsUploading(true);
+    
+    // Simulate file processing
+    setTimeout(() => {
+      // In a real app, we would parse the actual file content
+      // For this demo, we'll generate different content based on filename
+      let content = "";
+      
+      if (file.name.toLowerCase().includes("junior")) {
+        content = `
+          Name: Sarah Johnson
+          Email: sarah.junior@example.com
+          Phone: (555) 987-6543
+          
+          Education:
+          B.S. Computer Science, State University (2022-2026)
+          Relevant Coursework: Data Structures, Web Development, Database Systems
+          
+          Experience:
+          Intern, TechStart Inc. (Summer 2024)
+          - Assisted with frontend development using React
+          - Participated in code reviews
+          
+          Skills:
+          HTML, CSS, JavaScript, React, Git
+        `;
+      } else if (file.name.toLowerCase().includes("senior")) {
+        content = `
+          Name: Michael Chen
+          Email: michael.senior@example.com
+          Phone: (555) 456-7890
+          
+          Education:
+          M.S. Computer Engineering, Tech University (2018-2020)
+          B.S. Computer Science, State College (2014-2018)
+          
+          Experience:
+          Senior Software Engineer, InnovateCorp (2020-Present)
+          - Led development of microservices architecture
+          - Improved system performance by 40%
+          - Managed team of 5 developers
+          
+          Software Engineer, TechSolutions (2018-2020)
+          - Developed RESTful APIs serving 1M+ users
+          - Reduced database query times by 60%
+          
+          Skills:
+          Java, Spring Boot, React, Node.js, AWS, Docker, Kubernetes, PostgreSQL, MongoDB
+        `;
+      } else {
+        // Default content for other files
+        content = `
+          Name: Alex Morgan
+          Email: alex@example.com
+          Phone: (555) 123-4567
+          
+          Education:
+          B.A. Business Administration, City University (2019-2023)
+          
+          Experience:
+          Marketing Assistant, BrandCo (2022-2023)
+          - Managed social media accounts
+          - Created marketing content
+          
+          Intern, StartupXYZ (Summer 2021)
+          - Supported marketing campaigns
+          
+          Skills:
+          Social Media, Content Creation, Analytics, Photoshop
+        `;
+      }
+      
+      const parsedData = analyzeResumeContent(content);
+      const { feedbackItems, score } = generateFeedback(parsedData, content);
+      
+      setResumeData(parsedData);
+      setFeedback(feedbackItems);
+      setOverallScore(score);
+      setIsUploading(false);
+    }, 2000);
+  };
+
+  const handleTextAnalysis = () => {
+    if (!resumeText.trim()) return;
+    
+    setIsUploading(true);
+    
+    setTimeout(() => {
+      const parsedData = analyzeResumeContent(resumeText);
+      const { feedbackItems, score } = generateFeedback(parsedData, resumeText);
+      
+      setResumeData(parsedData);
+      setFeedback(feedbackItems);
+      setOverallScore(score);
+      setIsUploading(false);
+    }, 1500);
+  };
+
+  const getStatusIcon = (status: "good" | "improvement" | "missing") => {
+    switch (status) {
+      case "good":
+        return <CheckCircle className="h-5 w-5 text-green-500" />;
+      case "improvement":
+        return <AlertCircle className="h-5 w-5 text-yellow-500" />;
+      case "missing":
+        return <AlertCircle className="h-5 w-5 text-red-500" />;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusColor = (status: "good" | "improvement" | "missing") => {
+    switch (status) {
+      case "good":
+        return "border-green-200 bg-green-50";
+      case "improvement":
+        return "border-yellow-200 bg-yellow-50";
+      case "missing":
+        return "border-red-200 bg-red-50";
+      default:
+        return "";
+    }
+  };
+
+  const getPriorityBadge = (priority: "high" | "medium" | "low") => {
+    switch (priority) {
+      case "high":
+        return <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-800">High Priority</span>;
+      case "medium":
+        return <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">Medium Priority</span>;
+      case "low":
+        return <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">Low Priority</span>;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">AI Resume Scanner</h1>
+          <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+            Upload your resume or paste your content to get instant AI-powered feedback tailored to your experience level
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Upload Section */}
+          <div className="space-y-8">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Upload className="h-5 w-5" />
+                  Upload Your Resume
+                </CardTitle>
+                <CardDescription>
+                  Supported formats: PDF, DOCX (Max size: 5MB)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div 
+                  className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                    isUploading ? "opacity-50 cursor-not-allowed" : "hover:border-blue-400"
+                  }`}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  onClick={triggerFileInput}
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept=".pdf,.docx"
+                    className="hidden"
+                    disabled={isUploading}
+                  />
+                  <div className="flex flex-col items-center justify-center gap-4">
+                    <FileText className="h-12 w-12 text-gray-400" />
+                    <div>
+                      <p className="font-medium text-gray-700">
+                        {isUploading ? "Analyzing your resume..." : "Drag & drop your resume here"}
+                      </p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        or click to browse files
+                      </p>
+                    </div>
+                    <Button 
+                      disabled={isUploading}
+                      className={isUploading ? "opacity-50" : ""}
+                    >
+                      {isUploading ? "Processing..." : "Select File"}
+                    </Button>
+                  </div>
+                </div>
+
+                {file && (
+                  <div className="mt-4 p-3 bg-blue-50 rounded-lg flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-blue-500" />
+                      <span className="text-sm font-medium truncate max-w-xs">
+                        {file.name}
+                      </span>
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {(file.size / 1024 / 1024).toFixed(2)} MB
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Or Paste Your Resume
+                </CardTitle>
+                <CardDescription>
+                  Copy and paste your resume content for instant analysis
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <Textarea
+                    placeholder="Paste your resume content here..."
+                    className="min-h-[250px]"
+                    value={resumeText}
+                    onChange={(e) => setResumeText(e.target.value)}
+                  />
+                  <Button 
+                    className="w-full" 
+                    onClick={handleTextAnalysis}
+                    disabled={isUploading || !resumeText.trim()}
+                  >
+                    {isUploading ? "Analyzing..." : "Analyze Resume Content"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Results Section */}
+          <div className="space-y-8">
+            {resumeData && (
+              <Card className="shadow-lg">
+                <CardHeader>
+                  <CardTitle>Resume Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="font-semibold text-lg">{resumeData.name}</h3>
+                      <p className="text-gray-600">{resumeData.email} | {resumeData.phone}</p>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Education</h4>
+                      <ul className="list-disc pl-5 space-y-1">
+                        {resumeData.education.map((edu, index) => (
+                          <li key={index} className="text-gray-700">{edu}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Experience</h4>
+                      <ul className="list-disc pl-5 space-y-1">
+                        {resumeData.experience.map((exp, index) => (
+                          <li key={index} className="text-gray-700">{exp}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Skills</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {resumeData.skills.map((skill, index) => (
+                          <span 
+                            key={index} 
+                            className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {feedback.length > 0 && (
+              <Card className="shadow-lg">
+                <CardHeader>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5" />
+                        AI Feedback Analysis
+                      </CardTitle>
+                      <CardDescription>
+                        Based on industry standards and job market requirements
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border">
+                      <Star className="h-5 w-5 text-yellow-500 fill-current" />
+                      <span className="text-2xl font-bold">{overallScore}%</span>
+                      <span className="text-gray-500">Match Score</span>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {feedback.map((item) => (
+                      <div 
+                        key={item.id} 
+                        className={border rounded-lg p-4 transition-all ${getStatusColor(item.status)}}
+                      >
+                        <div className="flex items-start gap-3">
+                          {getStatusIcon(item.status)}
+                          <div className="flex-1">
+                            <div className="flex flex-wrap justify-between gap-2">
+                              <h3 className="font-semibold">{item.title}</h3>
+                              {getPriorityBadge(item.priority)}
+                            </div>
+                            <p className="text-gray-700 mt-1 text-sm">{item.description}</p>
+                            <div className="mt-2">
+                              <span className="text-xs px-2 py-1 rounded-full bg-white">
+                                {item.category}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                    <h3 className="font-semibold text-lg mb-2">Actionable Recommendations</h3>
+                    <ul className="list-disc pl-5 space-y-1 text-gray-700">
+                      {feedback
+                        .filter(item => item.status !== "good")
+                        .slice(0, 3)
+                        .map(item => (
+                          <li key={item.id}>{item.title}</li>
+                        ))
+                      }
+                      <li>Add a professional summary at the top of your resume</li>
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-12 text-center text-gray-600">
+          <p>Powered by advanced AI analysis to help you land your dream job</p>
+        </div>
+      </div>
+    </div>
+  );
+}
